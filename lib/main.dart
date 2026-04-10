@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:math' as math;
+import 'package:video_player/video_player.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:http/http.dart' as http;
+import 'package:visibility_detector/visibility_detector.dart';
 
 void main() {
   runApp(const AkshayPortfolioApp());
@@ -43,6 +47,23 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
   late AnimationController _animationController;
   double _scrollOffset = 0;
   int _selectedSection = 0;
+  bool _isScrolling = false;
+
+  late TextEditingController _nameController;
+  late TextEditingController _emailController;
+  late TextEditingController _projectController;
+  late TextEditingController _messageController;
+  bool _isSending = false;
+
+  final List<GlobalKey> _keys = List.generate(6, (index) => GlobalKey());
+
+  bool get _isMobile => MediaQuery.of(context).size.width < 800;
+  bool get _isTablet =>
+      MediaQuery.of(context).size.width >= 800 &&
+      MediaQuery.of(context).size.width < 1200;
+
+  double get _horizontalPadding => _isMobile ? 20.0 : (_isTablet ? 40.0 : 80.0);
+  double get _verticalPadding => _isMobile ? 60.0 : 120.0;
 
   final List<String> _navItems = [
     'Home',
@@ -61,17 +82,29 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
         setState(() {
           _scrollOffset = _scrollController.offset;
         });
+        if (!_isScrolling) {
+          _updateActiveSection();
+        }
       });
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..forward();
+
+    _nameController = TextEditingController();
+    _emailController = TextEditingController();
+    _projectController = TextEditingController();
+    _messageController = TextEditingController();
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
     _animationController.dispose();
+    _nameController.dispose();
+    _emailController.dispose();
+    _projectController.dispose();
+    _messageController.dispose();
     super.dispose();
   }
 
@@ -104,6 +137,155 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
         ],
       ),
     );
+  }
+
+  void _updateActiveSection() {
+    for (int i = _keys.length - 1; i >= 0; i--) {
+      final key = _keys[i];
+      if (key.currentContext != null) {
+        final box = key.currentContext!.findRenderObject() as RenderBox;
+        final position = box.localToGlobal(Offset.zero).dy;
+        if (position <= 150) {
+          if (_selectedSection != i) {
+            setState(() {
+              _selectedSection = i;
+            });
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  void _onSendMessage() async {
+    final String name = _nameController.text.trim();
+    final String email = _emailController.text.trim();
+    final String project = _projectController.text.trim();
+    final String message = _messageController.text.trim();
+
+    if (name.isEmpty || email.isEmpty || message.isEmpty) {
+      _showToast('Please fill in Name, Email, and Message', isError: true);
+      return;
+    }
+
+    setState(() => _isSending = true);
+
+    try {
+      // PRO TIP: To make this actually send to your email, 
+      // Replace these placeholders with your real EmailJS keys:
+      // https://www.emailjs.com/
+      const String serviceId = 'YOUR_SERVICE_ID';
+      const String templateId = 'YOUR_TEMPLATE_ID';
+      const String publicKey = 'YOUR_PUBLIC_KEY';
+
+      // For now, we'll simulate a 1.5s network delay
+      await Future.delayed(const Duration(milliseconds: 1500));
+
+      // Check if we have real keys or placeholders
+      if (serviceId != 'YOUR_SERVICE_ID') {
+        final response = await http.post(
+          Uri.parse('https://api.emailjs.com/api/v1.0/email/send'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'service_id': serviceId,
+            'template_id': templateId,
+            'user_id': publicKey,
+            'template_params': {
+              'from_name': name,
+              'from_email': email,
+              'project_type': project,
+              'message': message,
+              'to_email': 'akshaytheking101@gmail.com',
+            },
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          _clearFormAndShowSuccess();
+        } else {
+          _showToast('Failed to send (Error ${response.statusCode}). Check console.', isError: true);
+        }
+      } else {
+        // DEMO MODE: Successfully clear and show toast without real API call
+        _clearFormAndShowSuccess();
+      }
+    } catch (e) {
+      _showToast('Error: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  void _clearFormAndShowSuccess() {
+    _nameController.clear();
+    _emailController.clear();
+    _projectController.clear();
+    _messageController.clear();
+    _showToast('Message Sent Successfully!');
+  }
+
+  void _showToast(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        behavior: SnackBarBehavior.floating,
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          decoration: BoxDecoration(
+            color: isError ? Colors.redAccent.withOpacity(0.9) : const Color(0xFF1A1A1A).withOpacity(0.9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isError ? Colors.red : const Color(0xFF00D9FF).withOpacity(0.5),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: (isError ? Colors.red : const Color(0xFF00D9FF)).withOpacity(0.2),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isError ? Icons.error_outline : Icons.check_circle_outline,
+                color: isError ? Colors.white : const Color(0xFF00D9FF),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  message,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _scrollToSection(int index) {
+    setState(() {
+      _isScrolling = true;
+      _selectedSection = index;
+    });
+
+    final key = _keys[index];
+    if (key.currentContext != null) {
+      Scrollable.ensureVisible(
+        key.currentContext!,
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeInOut,
+      ).then((_) {
+        _isScrolling = false;
+      });
+    }
   }
 
   Widget _buildAnimatedBackground() {
@@ -162,34 +344,35 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                 ),
               ],
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: _navItems.asMap().entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 15),
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedSection = entry.key;
-                        });
-                      },
-                      child: Text(
-                        entry.value,
-                        style: GoogleFonts.spaceMono(
-                          color: _selectedSection == entry.key
-                              ? const Color(0xFF00D9FF)
-                              : Colors.white70,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.2,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: _navItems.asMap().entries.map((entry) {
+                  return Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: _isMobile ? 10 : 15,
+                    ),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: () => _scrollToSection(entry.key),
+                        child: Text(
+                          entry.value,
+                          style: GoogleFonts.spaceMono(
+                            color: _selectedSection == entry.key
+                                ? const Color(0xFF00D9FF)
+                                : Colors.white70,
+                            fontSize: _isMobile ? 12 : 14,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1.2,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              }).toList(),
+                  );
+                }).toList(),
+              ),
             ),
           ),
         ),
@@ -200,6 +383,7 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
   SliverToBoxAdapter _buildHeroSection() {
     return SliverToBoxAdapter(
       child: Container(
+        key: _keys[0],
         height: MediaQuery.of(context).size.height,
         child: Stack(
           children: [
@@ -222,7 +406,7 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
             // Main content
             Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
+                padding: EdgeInsets.symmetric(horizontal: _horizontalPadding),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -233,10 +417,10 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                       child: Text(
                         'AKSHAY KUMAR M',
                         style: GoogleFonts.bebasNeue(
-                          fontSize: 120,
+                          fontSize: _isMobile ? 60 : (_isTablet ? 90 : 120),
                           fontWeight: FontWeight.bold,
                           height: 0.9,
-                          letterSpacing: 8,
+                          letterSpacing: _isMobile ? 4 : 8,
                           foreground: Paint()
                             ..shader = const LinearGradient(
                               colors: [
@@ -270,22 +454,30 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'CREATIVE VIDEO EDITOR',
-                              style: GoogleFonts.rajdhani(
-                                fontSize: 36,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                                letterSpacing: 4,
+                            FadeInSlide(
+                              delay: 0.3,
+                              persistent: false,
+                              child: Text(
+                                'CREATIVE VIDEO EDITOR',
+                                style: GoogleFonts.rajdhani(
+                                  fontSize: _isMobile ? 24 : 36,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: _isMobile ? 2 : 4,
+                                ),
                               ),
                             ),
-                            Text(
-                              '& GRAPHIC DESIGNER',
-                              style: GoogleFonts.rajdhani(
-                                fontSize: 36,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF00D9FF),
-                                letterSpacing: 4,
+                            FadeInSlide(
+                              delay: 0.5,
+                              persistent: false,
+                              child: Text(
+                                '& GRAPHIC DESIGNER',
+                                style: GoogleFonts.rajdhani(
+                                  fontSize: _isMobile ? 24 : 36,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF00D9FF),
+                                  letterSpacing: _isMobile ? 2 : 4,
+                                ),
                               ),
                             ),
                           ],
@@ -297,12 +489,12 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                     // Description
                     FadeInSlide(
                       delay: 0.7,
-                      child: SizedBox(
-                        width: 600,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 600),
                         child: Text(
                           '4+ Years of Experience in Video Editing, Post-Production & Visual Storytelling',
                           style: GoogleFonts.inter(
-                            fontSize: 18,
+                            fontSize: _isMobile ? 16 : 18,
                             color: Colors.white70,
                             height: 1.6,
                             letterSpacing: 0.5,
@@ -315,16 +507,19 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                     // CTA Buttons
                     FadeInSlide(
                       delay: 0.9,
-                      child: Row(
+                      child: Wrap(
+                        spacing: 20,
+                        runSpacing: 20,
                         children: [
                           _buildCTAButton(
                             'VIEW MY WORK',
                             true,
+                            onTap: () => _scrollToSection(4),
                           ),
-                          const SizedBox(width: 20),
                           _buildCTAButton(
                             'CONTACT ME',
                             false,
+                            onTap: () => _scrollToSection(5),
                           ),
                         ],
                       ),
@@ -379,37 +574,51 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
     );
   }
 
-  Widget _buildCTAButton(String text, bool isPrimary) {
+  Widget _buildCTAButton(String text, bool isPrimary, {VoidCallback? onTap}) {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 18),
-        decoration: BoxDecoration(
-          color: isPrimary ? const Color(0xFF00D9FF) : Colors.transparent,
-          border: Border.all(
-            color: const Color(0xFF00D9FF),
-            width: 2,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 18),
+          decoration: BoxDecoration(
+            color: isPrimary ? const Color(0xFF00D9FF) : Colors.transparent,
+            border: Border.all(
+              color: const Color(0xFF00D9FF),
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(0),
+            boxShadow: isPrimary
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF00D9FF).withOpacity(0.3),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                    ),
+                  ]
+                : [],
           ),
-          borderRadius: BorderRadius.circular(0),
-          boxShadow: isPrimary
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF00D9FF).withOpacity(0.3),
-                    blurRadius: 20,
-                    spreadRadius: 2,
+          child: (_isSending && text == 'SEND MESSAGE')
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      isPrimary ? Colors.black : const Color(0xFF00D9FF),
+                    ),
                   ),
-                ]
-              : [],
-        ),
-        child: Text(
-          text,
-          style: GoogleFonts.spaceMono(
-            color: isPrimary ? Colors.black : const Color(0xFF00D9FF),
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2,
-          ),
+                )
+              : Text(
+                  text,
+                  style: GoogleFonts.spaceMono(
+                    color: isPrimary ? Colors.black : const Color(0xFF00D9FF),
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2,
+                  ),
+                ),
         ),
       ),
     );
@@ -418,67 +627,81 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
   SliverToBoxAdapter _buildAboutSection() {
     return SliverToBoxAdapter(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 120),
-        child: Row(
+        key: _keys[1],
+        padding: EdgeInsets.symmetric(
+          horizontal: _horizontalPadding,
+          vertical: _verticalPadding,
+        ),
+        child: Flex(
+          direction: _isMobile ? Axis.vertical : Axis.horizontal,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Left side - Image placeholder
-            Expanded(
-              flex: 2,
-              child: Container(
-                height: 600,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A1A1A),
-                  border: Border.all(
-                    color: const Color(0xFF00D9FF).withOpacity(0.3),
-                    width: 2,
-                  ),
-                ),
-                child: Stack(
-                  children: [
-                    Center(
-                      child: Icon(
-                        Icons.person,
-                        size: 200,
-                        color: const Color(0xFF00D9FF).withOpacity(0.2),
+            Flexible(
+              flex: _isMobile ? 0 : 2,
+              child: FadeInSlide(
+                delay: 0.2,
+                persistent: false,
+                child: HoverItem(
+                  child: Container(
+                    height: _isMobile ? 400 : 600,
+                    width: _isMobile ? double.infinity : null,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A),
+                      border: Border.all(
+                        color: const Color(0xFF00D9FF).withOpacity(0.3),
+                        width: 2,
                       ),
                     ),
-                    Positioned(
-                      top: 20,
-                      right: 20,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 15,
-                          vertical: 8,
-                        ),
-                        color: const Color(0xFF00D9FF),
-                        child: Text(
-                          'ABOUT',
-                          style: GoogleFonts.spaceMono(
-                            color: Colors.black,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 2,
+                    child: Stack(
+                      children: [
+                        Center(
+                          child: Icon(
+                            Icons.person,
+                            size: 200,
+                            color: const Color(0xFF00D9FF).withOpacity(0.2),
                           ),
                         ),
-                      ),
+                        Positioned(
+                          top: 20,
+                          right: 20,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 15,
+                              vertical: 8,
+                            ),
+                            color: const Color(0xFF00D9FF),
+                            child: Text(
+                              'ABOUT',
+                              style: GoogleFonts.spaceMono(
+                                color: Colors.black,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
-            const SizedBox(width: 60),
-
+            SizedBox(
+              width: _isMobile ? 0 : 60,
+              height: _isMobile ? 40 : 0,
+            ),
             // Right side - Content
-            Expanded(
-              flex: 3,
+            Flexible(
+              flex: _isMobile ? 0 : 3,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'ABOUT ME',
                     style: GoogleFonts.bebasNeue(
-                      fontSize: 80,
+                      fontSize: _isMobile ? 60 : 80,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                       letterSpacing: 4,
@@ -575,7 +798,11 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
 
     return SliverToBoxAdapter(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 120),
+        key: _keys[2],
+        padding: EdgeInsets.symmetric(
+          horizontal: _horizontalPadding,
+          vertical: _verticalPadding,
+        ),
         color: const Color(0xFF0F0F0F),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -583,61 +810,87 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
             Text(
               'SKILLS',
               style: GoogleFonts.bebasNeue(
-                fontSize: 100,
+                fontSize: _isMobile ? 60 : 100,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
-                letterSpacing: 8,
+                letterSpacing: _isMobile ? 4 : 8,
               ),
             ),
             const SizedBox(height: 60),
 
             // Skills grid
-            Wrap(
-              spacing: 40,
-              runSpacing: 60,
-              children: skills.entries.map((category) {
-                return Container(
-                  width: (MediaQuery.of(context).size.width - 200) / 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 15,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: const Color(0xFF00D9FF),
-                            width: 2,
-                          ),
-                        ),
-                        child: Text(
-                          category.key,
-                          style: GoogleFonts.spaceMono(
-                            color: const Color(0xFF00D9FF),
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 30),
-                      ...category.value.map((skill) => Padding(
-                            padding: const EdgeInsets.only(bottom: 15),
-                            child: Text(
-                              skill,
-                              style: GoogleFonts.inter(
-                                fontSize: 16,
-                                color: Colors.white70,
-                                letterSpacing: 0.3,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isDesktop = constraints.maxWidth > 800;
+                
+                final skillWidgets = skills.entries.map((category) {
+                  return FadeInSlide(
+                    delay: 0.2,
+                    persistent: false,
+                    child: HoverItem(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 15,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: const Color(0xFF00D9FF),
+                                width: 2,
                               ),
                             ),
-                          )),
+                            child: Text(
+                              category.key,
+                              style: GoogleFonts.spaceMono(
+                                color: const Color(0xFF00D9FF),
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 30),
+                          ...category.value.map((skill) => Padding(
+                                padding: const EdgeInsets.only(bottom: 15),
+                                child: Text(
+                                  skill,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    color: Colors.white70,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                              )),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList();
+
+                if (isDesktop) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: skillWidgets[0]),
+                      const SizedBox(width: 40),
+                      Expanded(child: skillWidgets[1]),
+                      const SizedBox(width: 40),
+                      Expanded(child: skillWidgets[2]),
                     ],
-                  ),
-                );
-              }).toList(),
+                  );
+                } else {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: skillWidgets.map((widget) => Padding(
+                      padding: const EdgeInsets.only(bottom: 60),
+                      child: widget,
+                    )).toList(),
+                  );
+                }
+              },
             ),
           ],
         ),
@@ -648,46 +901,62 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
   SliverToBoxAdapter _buildExperienceSection() {
     return SliverToBoxAdapter(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 120),
+        key: _keys[3],
+        padding: EdgeInsets.symmetric(
+          horizontal: _horizontalPadding,
+          vertical: _verticalPadding,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'EXPERIENCE',
               style: GoogleFonts.bebasNeue(
-                fontSize: 100,
+                fontSize: _isMobile ? 60 : 100,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
-                letterSpacing: 8,
+                letterSpacing: _isMobile ? 4 : 8,
               ),
             ),
             const SizedBox(height: 80),
 
             // Experience items
-            _buildExperienceItem(
-              'VIDEO EDITOR',
-              'Video & Photography Studios',
-              'May 2020 - Jan 2024',
-              [
-                'Edited raw footage into polished videos for broadcast and digital platforms',
-                'Collaborated with directors and production teams to meet creative requirements',
-                'Managed rough cuts and final cuts ensuring smooth sequencing and continuity',
-                'Integrated music, dialogues, graphics, and effects into cohesive stories',
-                'Continuously adopted new editing techniques and industry best practices',
-              ],
+            FadeInSlide(
+              delay: 0.1,
+              persistent: false,
+              child: HoverItem(
+                child: _buildExperienceItem(
+                  'VIDEO EDITOR',
+                  'Video & Photography Studios',
+                  'May 2020 - Jan 2024',
+                  [
+                    'Edited raw footage into polished videos for broadcast and digital platforms',
+                    'Collaborated with directors and production teams to meet creative requirements',
+                    'Managed rough cuts and final cuts ensuring smooth sequencing and continuity',
+                    'Integrated music, dialogues, graphics, and effects into cohesive stories',
+                    'Continuously adopted new editing techniques and industry best practices',
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 80),
-            _buildExperienceItem(
-              'GRAPHIC DESIGNER',
-              'Trice Technologies',
-              '2024 - 2026',
-              [
-                'Designed creative visual assets for digital and print platforms',
-                'Worked on branding materials, social media creatives, posters, and marketing designs',
-                'Collaborated with marketing and development teams to maintain brand consistency',
-                'Used Adobe Photoshop, Illustrator, Figma, and Canva for high-quality designs',
-                'Managed multiple projects while meeting deadlines and client requirements',
-              ],
+            FadeInSlide(
+              delay: 0.2,
+              persistent: false,
+              child: HoverItem(
+                child: _buildExperienceItem(
+                  'GRAPHIC DESIGNER',
+                  'Trice Technologies',
+                  '2024 - 2026',
+                  [
+                    'Designed creative visual assets for digital and print platforms',
+                    'Worked on branding materials, social media creatives, posters, and marketing designs',
+                    'Collaborated with marketing and development teams to maintain brand consistency',
+                    'Used Adobe Photoshop, Illustrator, Figma, and Canva for high-quality designs',
+                    'Managed multiple projects while meeting deadlines and client requirements',
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -702,7 +971,7 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
     List<String> responsibilities,
   ) {
     return Container(
-      padding: const EdgeInsets.all(40),
+      padding: EdgeInsets.all(_isMobile ? 20 : 40),
       decoration: BoxDecoration(
         border: Border.all(
           color: const Color(0xFF00D9FF).withOpacity(0.3),
@@ -712,8 +981,10 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Flex(
+            direction: _isMobile ? Axis.vertical : Axis.horizontal,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -721,7 +992,7 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                   Text(
                     title,
                     style: GoogleFonts.rajdhani(
-                      fontSize: 32,
+                      fontSize: _isMobile ? 24 : 32,
                       fontWeight: FontWeight.bold,
                       color: const Color(0xFF00D9FF),
                       letterSpacing: 2,
@@ -793,11 +1064,16 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
   SliverToBoxAdapter _buildGamingSection() {
     return SliverToBoxAdapter(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 120),
+        padding: EdgeInsets.symmetric(
+          horizontal: _horizontalPadding,
+          vertical: _verticalPadding,
+        ),
         color: const Color(0xFF0F0F0F),
-        child: Row(
+        child: Flex(
+          direction: _isMobile ? Axis.vertical : Axis.horizontal,
           children: [
-            Expanded(
+            Flexible(
+              flex: _isMobile ? 0 : 1,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -821,7 +1097,7 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                   Text(
                     'GAMING & STREAMING',
                     style: GoogleFonts.bebasNeue(
-                      fontSize: 80,
+                      fontSize: _isMobile ? 60 : 80,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                       letterSpacing: 4,
@@ -852,57 +1128,46 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
 
                   // Gaming highlights
                   Wrap(
-                    spacing: 20,
-                    runSpacing: 20,
+                    spacing: 12,
+                    runSpacing: 12,
                     children: [
-                      'GTA V Gameplay',
-                      'Harry Potter Series',
-                      'Story-Driven Games',
-                      'Cinematic Edits',
-                    ]
-                        .map((game) => Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color:
-                                      const Color(0xFFFF6B6B).withOpacity(0.5),
-                                  width: 2,
-                                ),
-                              ),
-                              child: Text(
-                                game,
-                                style: GoogleFonts.spaceMono(
-                                  color: const Color(0xFFFF6B6B),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                            ))
-                        .toList(),
+                      _buildGamingTag('GTA V Gameplay'),
+                      _buildGamingTag('Harry Potter Series'),
+                      _buildGamingTag('Story-Driven Games'),
+                      _buildGamingTag('Content Creation'),
+                    ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 60),
-            Expanded(
-              child: Container(
-                height: 500,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A1A1A),
-                  border: Border.all(
-                    color: const Color(0xFFFF6B6B).withOpacity(0.3),
-                    width: 2,
-                  ),
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.sports_esports,
-                    size: 150,
-                    color: const Color(0xFFFF6B6B).withOpacity(0.3),
+            SizedBox(
+              width: _isMobile ? 0 : 80,
+              height: _isMobile ? 40 : 0,
+            ),
+            // Gaming illustration/image placeholder
+            Flexible(
+              flex: _isMobile ? 0 : 1,
+              child: FadeInSlide(
+                delay: 0.3,
+                persistent: false,
+                child: HoverItem(
+                  child: Container(
+                    height: _isMobile ? 300 : 500,
+                    width: _isMobile ? double.infinity : null,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A),
+                      border: Border.all(
+                        color: const Color(0xFFFF6B6B).withOpacity(0.3),
+                        width: 2,
+                      ),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.sports_esports,
+                        size: _isMobile ? 80 : 150,
+                        color: const Color(0xFFFF6B6B).withOpacity(0.3),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -913,29 +1178,57 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
     );
   }
 
+  Widget _buildGamingTag(String text) {
+    return HoverItem(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: const Color(0xFFFF6B6B).withOpacity(0.5),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          text,
+          style: GoogleFonts.inter(
+            color: Colors.white70,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+
   SliverToBoxAdapter _buildPortfolioSection() {
-    final categories = [
-      'PROMOTIONAL VIDEOS',
-      'SHORT FILMS',
-      'WEDDING HIGHLIGHTS',
-      'GAMING CONTENT',
-      'SOCIAL MEDIA EDITS',
-      'REELS & TRAILERS',
+    final List<Map<String, String>> portfolioAssets = [
+      {'type': 'image', 'path': 'assets/banner_beauty.jpeg', 'label': 'BEAUTY CAMPAIGN'},
+      {'type': 'image', 'path': 'assets/banner_bridal.jpeg', 'label': 'WEDDING HIGHLIGHT'},
+      {'type': 'image', 'path': 'assets/banner_christmas.jpeg', 'label': 'CHRISTMAS SPECIAL'},
+      {'type': 'image', 'path': 'assets/banner_eid.jpeg', 'label': 'EID CELEBRATION'},
+      {'type': 'image', 'path': 'assets/banner_interiors.jpeg', 'label': 'INTERIOR DESIGN'},
+      {'type': 'image', 'path': 'assets/banner_onam.jpeg', 'label': 'ONAM FESTIVAL'},
+      {'type': 'video', 'path': 'assets/video_1.mp4', 'label': 'PROMOTIONAL VIDEO'},
+      {'type': 'video', 'path': 'assets/video_2.mp4', 'label': 'SHORT FILM'},
+      {'type': 'video', 'path': 'assets/video_3.mp4', 'label': 'SOCIAL MEDIA EDIT'},
     ];
 
     return SliverToBoxAdapter(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 120),
+        key: _keys[4],
+        padding: EdgeInsets.symmetric(
+          horizontal: _horizontalPadding,
+          vertical: _verticalPadding,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'PORTFOLIO',
               style: GoogleFonts.bebasNeue(
-                fontSize: 100,
+                fontSize: _isMobile ? 60 : 100,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
-                letterSpacing: 8,
+                letterSpacing: _isMobile ? 4 : 8,
               ),
             ),
             const SizedBox(height: 60),
@@ -944,52 +1237,85 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: 30,
-                mainAxisSpacing: 30,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: _isMobile ? 1 : (_isTablet ? 2 : 3),
+                crossAxisSpacing: _isMobile ? 20 : 30,
+                mainAxisSpacing: _isMobile ? 20 : 30,
                 childAspectRatio: 1.3,
               ),
-              itemCount: categories.length,
+              itemCount: portfolioAssets.length,
               itemBuilder: (context, index) {
-                return MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1A1A),
-                      border: Border.all(
-                        color: const Color(0xFF00D9FF).withOpacity(0.3),
-                        width: 2,
-                      ),
-                    ),
-                    child: Stack(
-                      children: [
-                        Center(
-                          child: Icon(
-                            Icons.play_circle_outline,
-                            size: 80,
-                            color: const Color(0xFF00D9FF).withOpacity(0.3),
-                          ),
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(20),
-                            color: Colors.black.withOpacity(0.8),
-                            child: Text(
-                              categories[index],
-                              style: GoogleFonts.spaceMono(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.5,
-                              ),
+                final asset = portfolioAssets[index];
+                return FadeInSlide(
+                  delay: (index % 3) * 0.1,
+                  persistent: false,
+                  child: HoverItem(
+                    child: GestureDetector(
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => PortfolioLightbox(asset: asset),
+                        );
+                      },
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1A1A1A),
+                            border: Border.all(
+                              color: const Color(0xFF00D9FF).withOpacity(0.3),
+                              width: 2,
                             ),
                           ),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              // Media Content
+                              asset['type'] == 'video'
+                                  ? PortfolioVideoPlayer(
+                                      videoPath: asset['path']!)
+                                  : Image.asset(
+                                      asset['path']!,
+                                      fit: BoxFit.contain,
+                                    ),
+
+                              // Overlay Graphic
+                              Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.bottomCenter,
+                                    end: Alignment.topCenter,
+                                    colors: [
+                                      Colors.black.withOpacity(0.9),
+                                      Colors.transparent,
+                                    ],
+                                    stops: const [0.0, 0.4],
+                                  ),
+                                ),
+                              ),
+
+                              // Label
+                              Positioned(
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(20),
+                                  child: Text(
+                                    asset['label']!,
+                                    style: GoogleFonts.spaceMono(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.5,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 );
@@ -1004,87 +1330,102 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
   SliverToBoxAdapter _buildEducationSection() {
     return SliverToBoxAdapter(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 120),
+        padding: EdgeInsets.symmetric(
+          horizontal: _horizontalPadding,
+          vertical: _verticalPadding,
+        ),
         color: const Color(0xFF0F0F0F),
-        child: Row(
+        child: Flex(
+          direction: _isMobile ? Axis.vertical : Axis.horizontal,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
+            Flexible(
+              flex: _isMobile ? 0 : 1,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'EDUCATION',
                     style: GoogleFonts.bebasNeue(
-                      fontSize: 80,
+                      fontSize: _isMobile ? 60 : 80,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                       letterSpacing: 4,
                     ),
                   ),
                   const SizedBox(height: 40),
-                  Container(
-                    padding: const EdgeInsets.all(40),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: const Color(0xFF00D9FF).withOpacity(0.3),
-                        width: 2,
+                  FadeInSlide(
+                    delay: 0.1,
+                    persistent: false,
+                    child: HoverItem(
+                      child: Container(
+                        padding: const EdgeInsets.all(40),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: const Color(0xFF00D9FF).withOpacity(0.3),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Bachelor of Computer Applications',
+                              style: GoogleFonts.rajdhani(
+                                fontSize: _isMobile ? 22 : 28,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF00D9FF),
+                                letterSpacing: 1,
+                              ),
+                            ),
+                            const SizedBox(height: 15),
+                            Text(
+                              'Bharathmatha College, Calicut University',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                color: Colors.white70,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              '2017 - 2020',
+                              style: GoogleFonts.spaceMono(
+                                fontSize: 14,
+                                color: Colors.white60,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Kozhinjampara, Palakkad, Kerala',
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                color: Colors.white54,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Bachelor of Computer Applications',
-                          style: GoogleFonts.rajdhani(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: const Color(0xFF00D9FF),
-                            letterSpacing: 1,
-                          ),
-                        ),
-                        const SizedBox(height: 15),
-                        Text(
-                          'Bharathmatha College, Calicut University',
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            color: Colors.white70,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          '2017 - 2020',
-                          style: GoogleFonts.spaceMono(
-                            fontSize: 14,
-                            color: Colors.white60,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Kozhinjampara, Palakkad, Kerala',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            color: Colors.white54,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 60),
-            Expanded(
+            SizedBox(
+              width: _isMobile ? 0 : 60,
+              height: _isMobile ? 60 : 0,
+            ),
+            Flexible(
+              flex: _isMobile ? 0 : 1,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'LANGUAGES',
                     style: GoogleFonts.bebasNeue(
-                      fontSize: 80,
+                      fontSize: _isMobile ? 60 : 80,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                       letterSpacing: 4,
@@ -1144,34 +1485,40 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
   SliverToBoxAdapter _buildContactSection() {
     return SliverToBoxAdapter(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 120),
+        key: _keys[5],
+        padding: EdgeInsets.symmetric(
+          horizontal: _horizontalPadding,
+          vertical: _verticalPadding,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'LET\'S WORK',
               style: GoogleFonts.bebasNeue(
-                fontSize: 100,
+                fontSize: _isMobile ? 60 : 100,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
-                letterSpacing: 8,
+                letterSpacing: _isMobile ? 4 : 8,
               ),
             ),
             Text(
               'TOGETHER',
               style: GoogleFonts.bebasNeue(
-                fontSize: 100,
+                fontSize: _isMobile ? 60 : 100,
                 fontWeight: FontWeight.bold,
                 color: const Color(0xFF00D9FF),
-                letterSpacing: 8,
+                letterSpacing: _isMobile ? 4 : 8,
               ),
             ),
             const SizedBox(height: 80),
-            Row(
+            Flex(
+              direction: _isMobile ? Axis.vertical : Axis.horizontal,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Contact info
-                Expanded(
+                Flexible(
+                  flex: _isMobile ? 0 : 1,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1180,13 +1527,13 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                         '+91 9061399383',
                         Icons.phone,
                       ),
-                      const SizedBox(height: 40),
+                      SizedBox(height: _isMobile ? 20 : 40),
                       _buildContactInfo(
                         'EMAIL',
-                        'Akshaytheking101@gmail.com',
+                        'akshaytheking101@gmail.com',
                         Icons.email,
                       ),
-                      const SizedBox(height: 40),
+                      SizedBox(height: _isMobile ? 20 : 40),
                       _buildContactInfo(
                         'LOCATION',
                         'Kunnachi, Elappully\nPalakkad, Kerala\nIndia - 678622',
@@ -1195,24 +1542,28 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                     ],
                   ),
                 ),
-                const SizedBox(width: 80),
+                SizedBox(
+                  width: _isMobile ? 0 : 80,
+                  height: _isMobile ? 60 : 0,
+                ),
 
                 // Contact form
-                Expanded(
-                  flex: 2,
+                Flexible(
+                  flex: _isMobile ? 0 : 2,
                   child: Column(
                     children: [
-                      _buildTextField('Your Name'),
+                      _buildTextField('Your Name', _nameController),
                       const SizedBox(height: 20),
-                      _buildTextField('Your Email'),
+                      _buildTextField('Your Email', _emailController),
                       const SizedBox(height: 20),
-                      _buildTextField('Project Type'),
+                      _buildTextField('Project Type', _projectController),
                       const SizedBox(height: 20),
-                      _buildTextField('Message', maxLines: 5),
+                      _buildTextField('Message', _messageController, maxLines: 5),
                       const SizedBox(height: 30),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: _buildCTAButton('SEND MESSAGE', true),
+                        child: _buildCTAButton('SEND MESSAGE', true,
+                            onTap: _onSendMessage),
                       ),
                     ],
                   ),
@@ -1240,7 +1591,7 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
             Text(
               label,
               style: GoogleFonts.spaceMono(
-                fontSize: 12,
+                fontSize: _isMobile ? 10 : 12,
                 color: Colors.white60,
                 letterSpacing: 2,
               ),
@@ -1264,7 +1615,8 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
     );
   }
 
-  Widget _buildTextField(String hint, {int maxLines = 1}) {
+  Widget _buildTextField(String hint, TextEditingController controller,
+      {int maxLines = 1}) {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(
@@ -1273,6 +1625,7 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
         ),
       ),
       child: TextField(
+        controller: controller,
         maxLines: maxLines,
         style: GoogleFonts.inter(
           color: Colors.white,
@@ -1294,28 +1647,49 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
   SliverToBoxAdapter _buildFooterSection() {
     return SliverToBoxAdapter(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 60),
+        padding: EdgeInsets.symmetric(
+          horizontal: _horizontalPadding,
+          vertical: _isMobile ? 40 : 60,
+        ),
         color: const Color(0xFF0A0A0A),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 20,
+              runSpacing: 20,
               children: [
-                'YouTube',
-                'Instagram',
-                'Vimeo',
-                'LinkedIn',
+                {
+                  'name': 'YouTube',
+                  'url': 'https://www.youtube.com/@WolfgamerAK'
+                },
+                {
+                  'name': 'Instagram',
+                  'url':
+                      'https://www.instagram.com/akshay_thewolf?utm_source=qr&igsh=MTI4Z2ttb3BoZmpvZw=='
+                },
               ]
-                  .map((social) => Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          child: Text(
-                            social,
-                            style: GoogleFonts.spaceMono(
-                              color: Colors.white70,
-                              fontSize: 14,
-                              letterSpacing: 1,
+                  .map((social) => FadeInSlide(
+                        delay: 0.1,
+                        persistent: false,
+                        child: HoverItem(
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            child: GestureDetector(
+                              onTap: () async {
+                                final Uri _url = Uri.parse(social['url']!);
+                                if (!await launchUrl(_url)) {
+                                  throw 'Could not launch $_url';
+                                }
+                              },
+                              child: Text(
+                                social['name']!,
+                                style: GoogleFonts.spaceMono(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                  letterSpacing: 1,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1391,11 +1765,13 @@ class GridPainter extends CustomPainter {
 class FadeInSlide extends StatefulWidget {
   final Widget child;
   final double delay;
+  final bool persistent; // If false, will fade out when leaving view
 
   const FadeInSlide({
     Key? key,
     required this.child,
     this.delay = 0,
+    this.persistent = true,
   }) : super(key: key);
 
   @override
@@ -1407,6 +1783,7 @@ class _FadeInSlideState extends State<FadeInSlide>
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  bool _isVisible = false;
 
   @override
   void initState() {
@@ -1421,13 +1798,21 @@ class _FadeInSlideState extends State<FadeInSlide>
     );
 
     _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
+      begin: const Offset(0, 0.2),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+  }
 
-    Future.delayed(Duration(milliseconds: (widget.delay * 1000).toInt()), () {
-      if (mounted) _controller.forward();
-    });
+  void _handleVisibility(double visibleFraction) {
+    if (visibleFraction > 0.1 && !_isVisible) {
+      _isVisible = true;
+      Future.delayed(Duration(milliseconds: (widget.delay * 1000).toInt()), () {
+        if (mounted) _controller.forward();
+      });
+    } else if (visibleFraction == 0 && _isVisible && !widget.persistent) {
+      _isVisible = false;
+      _controller.reverse();
+    }
   }
 
   @override
@@ -1438,11 +1823,231 @@ class _FadeInSlideState extends State<FadeInSlide>
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: widget.child,
+    return VisibilityDetector(
+      key: Key('fade_in_${identityHashCode(this)}'),
+      onVisibilityChanged: (info) => _handleVisibility(info.visibleFraction),
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: SlideTransition(
+          position: _slideAnimation,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+// Interactive Hover Item Wrapper
+class HoverItem extends StatefulWidget {
+  final Widget child;
+  const HoverItem({Key? key, required this.child}) : super(key: key);
+
+  @override
+  State<HoverItem> createState() => _HoverItemState();
+}
+
+class _HoverItemState extends State<HoverItem> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedScale(
+        scale: _isHovered ? 1.02 : 1.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          decoration: BoxDecoration(
+            boxShadow: _isHovered
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF00D9FF).withOpacity(0.1),
+                      blurRadius: 30,
+                      spreadRadius: 5,
+                    )
+                  ]
+                : [],
+          ),
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+class PortfolioVideoPlayer extends StatefulWidget {
+  final String videoPath;
+
+  const PortfolioVideoPlayer({Key? key, required this.videoPath}) : super(key: key);
+
+  @override
+  State<PortfolioVideoPlayer> createState() => _PortfolioVideoPlayerState();
+}
+
+class _PortfolioVideoPlayerState extends State<PortfolioVideoPlayer> {
+  late VideoPlayerController _controller;
+  bool _isHovering = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.asset(widget.videoPath)
+      ..setLooping(true)
+      ..setVolume(0.0)
+      ..initialize().then((_) {
+        if (mounted) setState(() {});
+        _controller.play(); // Auto-play looping video like a thumbnail
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_controller.value.isInitialized) {
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFF00D9FF)),
+      );
+    }
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovering = true),
+      onExit: (_) => setState(() => _isHovering = false),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          FittedBox(
+            fit: BoxFit.contain,
+            child: SizedBox(
+              width: _controller.value.size.width,
+              height: _controller.value.size.height,
+              child: VideoPlayer(_controller),
+            ),
+          ),
+          // if (_isHovering)
+            // Center(
+            //   // child: Icon(
+            //   //   Icons.play_circle_outline,
+            //   //   size: 80,
+            //   //   color: const Color(0xFF00D9FF).withOpacity(0.8),
+            //   // ),
+            // ),
+        ],
+      ),
+    );
+  }
+}
+
+class PortfolioLightbox extends StatefulWidget {
+  final Map<String, String> asset;
+
+  const PortfolioLightbox({Key? key, required this.asset}) : super(key: key);
+
+  @override
+  State<PortfolioLightbox> createState() => _PortfolioLightboxState();
+}
+
+class _PortfolioLightboxState extends State<PortfolioLightbox> {
+  final TransformationController _transformationController = TransformationController();
+
+  void _zoomIn() {
+    final matrix = _transformationController.value.clone();
+    matrix.scale(1.2, 1.2, 1.0);
+    _transformationController.value = matrix;
+  }
+
+  void _zoomOut() {
+    final matrix = _transformationController.value.clone();
+    matrix.scale(1 / 1.2, 1 / 1.2, 1.0);
+    _transformationController.value = matrix;
+  }
+
+  @override
+  void dispose() {
+    _transformationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.all(20),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Background dismiss
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+          
+          // Image / Video content
+          Container(
+            width: MediaQuery.of(context).size.width * 0.8,
+            height: MediaQuery.of(context).size.height * 0.8,
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFF00D9FF), width: 2),
+              color: const Color(0xFF0F0F0F),
+            ),
+            child: InteractiveViewer(
+              transformationController: _transformationController,
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: widget.asset['type'] == 'video'
+                  ? PortfolioVideoPlayer(videoPath: widget.asset['path']!)
+                  : Image.asset(widget.asset['path']!, fit: BoxFit.contain),
+            ),
+          ),
+
+          // Close Button
+          Positioned(
+            top: 20,
+            right: 20,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 40),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+
+          // Zoom Controls
+          // Positioned(
+          //   bottom: 20,
+          //   child: Container(
+          //     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          //     decoration: BoxDecoration(
+          //       color: const Color(0xFF1A1A1A).withOpacity(0.9),
+          //       borderRadius: BorderRadius.circular(30),
+          //       border: Border.all(color: const Color(0xFF00D9FF).withOpacity(0.5)),
+          //     ),
+          //     child: Row(
+          //       mainAxisSize: MainAxisSize.min,
+          //       children: [
+          //         IconButton(
+          //           icon: const Icon(Icons.zoom_out, color: Color(0xFF00D9FF)),
+          //           onPressed: _zoomOut,
+          //           tooltip: "Zoom Out",
+          //         ),
+          //         const SizedBox(width: 20),
+          //         IconButton(
+          //           icon: const Icon(Icons.zoom_in, color: Color(0xFF00D9FF)),
+          //           onPressed: _zoomIn,
+          //           tooltip: "Zoom In",
+          //         ),
+          //       ],
+          //     ),
+          //   ),
+          // ),
+        ],
       ),
     );
   }
