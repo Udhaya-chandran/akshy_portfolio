@@ -655,11 +655,35 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                     ),
                     child: Stack(
                       children: [
-                        Center(
-                          child: Icon(
-                            Icons.person,
-                            size: 200,
-                            color: const Color(0xFF00D9FF).withOpacity(0.2),
+                        Positioned.fill(
+                          child: Image.asset(
+                            'assets/profile_3.png',
+                            fit: BoxFit.cover,
+                            alignment: Alignment.topCenter,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Center(
+                                child: Icon(
+                                  Icons.person,
+                                  size: 200,
+                                  color: const Color(0xFF00D9FF).withOpacity(0.2),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        // Cinematic Overlay
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  const Color(0xFF0A0A0A).withOpacity(0.5),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                         Positioned(
