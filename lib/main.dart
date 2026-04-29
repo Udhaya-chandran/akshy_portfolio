@@ -658,8 +658,8 @@ class _PortfolioHomePageState extends State<PortfolioHomePage>
                         Positioned.fill(
                           child: Image.asset(
                             'assets/profile_3.png',
-                            fit: BoxFit.cover,
-                            alignment: Alignment.topCenter,
+                            fit: BoxFit.contain,
+                            alignment: Alignment.center,
                             errorBuilder: (context, error, stackTrace) {
                               return Center(
                                 child: Icon(
